@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0f766e"><link rel="apple-touch-icon" href="icon-192.png"><title>مولّد كروت الأرقام العشوائية</title>
+<style>
+:root{--bg:#f6f7fb;--sf:#fff;--tx:#1b1f2a;--mu:#667085;--bd:#e3e6ee;--ac:#0f766e;--top:#e0f2fe;--bot:#fef3c7;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151c;--sf:#1b2030;--tx:#eef0f6;--mu:#9aa3b5;--bd:#2d3447;--ac:#2dd4bf;--top:#0c3a52;--bot:#4a3b0c}}
+:root[data-theme="dark"]{--bg:#12151c;--sf:#1b2030;--tx:#eef0f6;--mu:#9aa3b5;--bd:#2d3447;--ac:#2dd4bf;--top:#0c3a52;--bot:#4a3b0c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:"Segoe UI",Tahoma,"Noto Naskh Arabic",Arial,sans-serif;line-height:1.5}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:1.35rem;margin:6px 0 14px}
+.panel{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+.row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+label{display:block;font-size:.8rem;color:var(--mu);margin-bottom:4px}
+input{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font-size:1rem}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+button{border:0;border-radius:10px;padding:12px 16px;font-size:1rem;font-weight:600;cursor:pointer;background:var(--ac);color:#fff;font-family:inherit}
+button.s{background:var(--bg);color:var(--tx);border:1px solid var(--bd)}
+button:disabled{opacity:.45}
+#msg{min-height:1.4em;font-size:.85rem;color:var(--mu);margin-top:8px}
+#stats{font-size:.9rem;color:var(--mu);margin:0 2px 10px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+.card .h{font-size:.72rem;color:var(--mu);padding:4px 10px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between}
+.line{display:flex;justify-content:space-around;padding:8px 4px;font-weight:700;font-size:1.05rem;direction:ltr}
+.line.t{background:var(--top)}.line.b{background:var(--bot)}
+.line span{min-width:32px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>🎴 مولّد كروت الأرقام العشوائية</h1>
+<div class="panel">
+<div class="row">
+<div><label for="n">عدد الكروت (200 كحد أدنى)</label><input id="n" type="number" inputmode="numeric" value="200" min="200"></div>
+<div><label for="lo">من رقم</label><input id="lo" type="number" inputmode="numeric" value="1"></div>
+<div><label for="hi">إلى رقم</label><input id="hi" type="number" inputmode="numeric" value="90"></div>
+</div>
+<div class="btns">
+<button id="gen">توليد الكروت</button>
+<button class="s" id="img" disabled>حفظ كل الصور</button>
+</div>
+<div id="msg"></div>
+</div>
+<div id="stats"></div>
+<div id="grid"></div>
+</div>
+<script>
+(function(){
+var KEY="cards_v1",PER=20,cards=[];
+var $=function(i){return document.getElementById(i)};
+function rnd(max){var a=new Uint32Array(1),lim=Math.floor(4294967296/max)*max;do{crypto.getRandomValues(a)}while(a[0]>=lim);return a[0]%max}
+function pick(lo,hi,k){var s={},r=[];while(r.length<k){var v=lo+rnd(hi-lo+1);if(!s[v]){s[v]=1;r.push(v)}}return r}
+function msg(t){$("msg").textContent=t}
+function pages(){return Math.ceil(cards.length/PER)}
+function generate(){
+ var n=parseInt($("n").value,10),lo=parseInt($("lo").value,10),hi=parseInt($("hi").value,10);
+ if(!(n>=200)){n=200;$("n").value=200}
+ if(isNaN(lo)||isNaN(hi)||hi-lo+1<10){msg("النطاق يجب أن يحتوي 10 أرقام مختلفة على الأقل");return}
+ var seen={},out=[],guard=0;
+ while(out.length<n&&guard<n*50){guard++;
+  var a=pick(lo,hi,10),top=a.slice(0,5),bot=a.slice(5);
+  var key=top.slice().sort(function(x,y){return x-y}).join(",")+"|"+bot.slice().sort(function(x,y){return x-y}).join(",");
+  if(seen[key])continue;seen[key]=1;out.push({top:top,bot:bot});
+ }
+ cards=out;render();save();
+ msg(out.length<n?"تم توليد "+out.length+" كرت فقط (النطاق ضيق لتوليد كروت فريدة أكثر)":"تم التوليد ✓ سيتم حفظ "+pages()+" صورة");
+}
+function render(){
+ var g=$("grid");g.textContent="";
+ var f=document.createDocumentFragment();
+ cards.forEach(function(c,i){
+  var d=document.createElement("div");d.className="card";
+  var h=document.createElement("div");h.className="h";h.innerHTML="<span>كرت</span><span>"+(i+1)+"</span>";
+  d.appendChild(h);
+  [["t",c.top],["b",c.bot]].forEach(function(p){
+   var l=document.createElement("div");l.className="line "+p[0];
+   p[1].forEach(function(v){var s=document.createElement("span");s.textContent=v;l.appendChild(s)});
+   d.appendChild(l);
+  });
+  f.appendChild(d);
+ });
+ g.appendChild(f);
+ $("stats").textContent=cards.length?"عدد الكروت: "+cards.length+" — عدد الصور: "+pages():"";
+ $("img").disabled=!cards.length;
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({cards:cards,n:$("n").value,lo:$("lo").value,hi:$("hi").value}))}catch(e){}}
+function load(){try{var r=localStorage.getItem(KEY);if(!r)return;var o=JSON.parse(r);if(o&&o.cards&&o.cards.length){cards=o.cards;$("n").value=o.n||200;$("lo").value=o.lo||1;$("hi").value=o.hi||90;render();msg("تم استرجاع آخر كروت مولّدة")}}catch(e){}}
+function rr(x,X,Y,w,h,r){x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
+function pageBlob(p){
+ var cols=4,rows=5,cw=220,ch=200,gap=14,pad=30,th=60;
+ var W=pad*2+cols*cw+(cols-1)*gap,H=pad*2+th+rows*ch+(rows-1)*gap;
+ var cv=document.createElement("canvas");cv.width=W;cv.height=H;
+ var x=cv.getContext("2d");
+ x.fillStyle="#ffffff";x.fillRect(0,0,W,H);
+ var list=cards.slice(p*PER,p*PER+PER);
+ x.fillStyle="#1b1f2a";x.font="bold 30px Arial,sans-serif";x.textAlign="left";x.textBaseline="middle";
+ x.fillText("Page "+(p+1)+" / "+pages()+"   Cards "+(p*PER+1)+" - "+(p*PER+list.length),pad,pad+th/2);
+ list.forEach(function(c,i){
+  var col=i%cols,row=Math.floor(i/cols);
+  var X=pad+col*(cw+gap),Y=pad+th+row*(ch+gap);
+  x.save();rr(x,X,Y,cw,ch,12);x.clip();
+  x.fillStyle="#f1f5f9";x.fillRect(X,Y,cw,40);
+  x.fillStyle="#e0f2fe";x.fillRect(X,Y+40,cw,80);
+  x.fillStyle="#fef3c7";x.fillRect(X,Y+120,cw,80);
+  x.restore();
+  x.strokeStyle="#94a3b8";x.lineWidth=2;rr(x,X,Y,cw,ch,12);x.stroke();
+  x.fillStyle="#475569";x.font="bold 20px Arial,sans-serif";x.textAlign="center";
+  x.fillText("#"+(p*PER+i+1),X+cw/2,Y+20);
+  x.fillStyle="#0f172a";x.font="bold 32px Arial,sans-serif";
+  [c.top,c.bot].forEach(function(arr,k){
+   arr.forEach(function(v,j){x.fillText(String(v),X+cw/2+(j-2)*40,Y+80+k*80)});
+  });
+ });
+ return new Promise(function(res){cv.toBlob(res,"image/png")});
+}
+async function saveImg(d,p,tries){
+ try{
+  var blob=await pageBlob(p);
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="cards-"+String(p+1).padStart(2,"0")+".png";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},10000);await new Promise(function(r){setTimeout(r,800)});
+  return true;
+ }catch(e){
+  if(e&&e.code==="rate_limited"&&(tries||0)<6){await new Promise(function(r){setTimeout(r,2000)});return saveImg(d,p,(tries||0)+1)}
+  msg(e&&e.code==="declined"?"تم إلغاء الحفظ":"تعذر حفظ الصورة "+(p+1));
+  return false;
+ }
+}
+$("img").onclick=async function(){
+ var d=null;
+ $("img").disabled=true;
+ var n=pages();
+ for(var p=0;p<n;p++){
+  msg("حفظ الصورة "+(p+1)+" من "+n+"…");
+  if(!(await saveImg(d,p))){$("img").disabled=false;return}
+ }
+ msg("تم حفظ "+n+" صورة ✓");
+ $("img").disabled=false;
+};
+$("gen").onclick=generate;
+load();
+})();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
+</script>
+</body>
+</html>

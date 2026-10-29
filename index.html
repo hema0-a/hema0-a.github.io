@@ -29,22 +29,21 @@ button:disabled{opacity:.45}
 .card .h{font-size:.72rem;color:var(--mu);padding:4px 10px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between}
 .line{display:flex;justify-content:space-around;padding:8px 4px;font-weight:700;font-size:1.05rem;direction:ltr}
 .line.t{background:var(--top)}.line.b{background:var(--bot)}
-.line span{min-width:32px;text-align:center}
+.line{flex-wrap:wrap;gap:2px 6px}.line span{min-width:16px;text-align:center}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>🎴 مولّد كروت الأرقام العشوائية</h1>
+<h1>🎴 مولّد كروت الدخول</h1>
 <div class="panel">
 <div class="row">
-<div><label for="n">عدد الكروت (200 كحد أدنى)</label><input id="n" type="number" inputmode="numeric" value="200" min="200" max="10000"></div>
-<div><label for="lo">من رقم</label><input id="lo" type="number" inputmode="numeric" value="1"></div>
-<div><label for="hi">إلى رقم</label><input id="hi" type="number" inputmode="numeric" value="90"></div>
+<div><label for="n">عدد الكروت (200 كحد أدنى)</label><input id="n" type="number" inputmode="numeric" value="200" min="200" max="100000"></div>
+<div><label for="tc">أرقام الصف العلوي</label><input id="tc" type="number" inputmode="numeric" value="5" min="1" max="20"></div>
+<div><label for="bc">أرقام الصف السفلي</label><input id="bc" type="number" inputmode="numeric" value="5" min="1" max="20"></div>
 </div>
 <div class="btns">
 <button id="gen">توليد الكروت</button>
 <button class="s" id="img" disabled>حفظ كل الصور</button>
-<button class="s" id="rst">مسح سجل التكرار</button>
 </div>
 <div id="msg"></div>
 </div>
@@ -53,34 +52,80 @@ button:disabled{opacity:.45}
 </div>
 <script>
 (function(){
-var KEY="cards_v1",HK="cards_hist_v1",MAXH=10000,PER=20,cards=[],hist={},hcount=0;
+var KEY="cards_v2",PER=20,MAXRUN=100000,cards=[],db=null,busy=false,used=0,cap=0;
 var $=function(i){return document.getElementById(i)};
 function rnd(max){var a=new Uint32Array(1),lim=Math.floor(4294967296/max)*max;do{crypto.getRandomValues(a)}while(a[0]>=lim);return a[0]%max}
-function pick(lo,hi,k){var s={},r=[];while(r.length<k){var v=lo+rnd(hi-lo+1);if(!s[v]){s[v]=1;r.push(v)}}return r}
+function digits(k){var r=[];for(var i=0;i<k;i++)r.push(rnd(10));return r}
 function msg(t){$("msg").textContent=t}
 function pages(){return Math.ceil(cards.length/PER)}
-function keyOf(c){var f=function(x,y){return x-y};return c.top.slice().sort(f).join(",")+"|"+c.bot.slice().sort(f).join(",")}
-function loadHist(){try{var r=localStorage.getItem(HK);if(r){JSON.parse(r).forEach(function(k){hist[k]=1})}}catch(e){}hcount=Object.keys(hist).length}
-function saveHist(){try{localStorage.setItem(HK,JSON.stringify(Object.keys(hist)))}catch(e){msg("تعذر حفظ سجل التكرار، مساحة التخزين ممتلئة")}}
-function markCards(){cards.forEach(function(c){var k=keyOf(c);if(!hist[k]){hist[k]=1;hcount++}})}
-function generate(){
- var n=parseInt($("n").value,10),lo=parseInt($("lo").value,10),hi=parseInt($("hi").value,10);
- if(!(n>=200))n=200;
- if(n>MAXH)n=MAXH;
- if(isNaN(lo)||isNaN(hi)||hi-lo+1<10){msg("النطاق يجب أن يحتوي 10 أرقام مختلفة على الأقل");return}
- var left=MAXH-hcount;
- if(left<=0){msg("وصلت إلى "+MAXH+" كرت بدون تكرار. اضغط «مسح سجل التكرار» للبدء من جديد");return}
- var capped=n>left;if(capped)n=left;
- $("n").value=n;
+function clamp(v,lo,hi,d){v=parseInt(v,10);if(isNaN(v))v=d;return Math.max(lo,Math.min(hi,v))}
+function cfgNow(){var t=clamp($("tc").value,1,20,5),b=clamp($("bc").value,1,20,5);$("tc").value=t;$("bc").value=b;return{t:t,b:b}}
+function prefix(t,b){return t+"x"+b+":"}
+function keyOf(c){return prefix(c.top.length,c.bot.length)+c.top.join("")+"|"+c.bot.join("")}
+function fmt(x){return x<=1e12?x.toLocaleString("en"):"غير محدود عملياً"}
+function openDB(){return new Promise(function(res,rej){var r=indexedDB.open("cardsdb",1);r.onupgradeneeded=function(){var d=r.result;if(!d.objectStoreNames.contains("hist"))d.createObjectStore("hist");if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta")};r.onsuccess=function(){res(r.result)};r.onerror=function(){rej(r.error)}})}
+function countCfg(t,b,cb){
+ try{var p=prefix(t,b),r=db.transaction("hist").objectStore("hist").count(IDBKeyRange.bound(p,p+"\uffff"));
+  r.onsuccess=function(){cb(r.result)};r.onerror=function(){cb(0)}}catch(e){cb(0)}
+}
+function refreshStats(){var c=cfgNow();cap=Math.pow(10,c.t+c.b);if(!db){render();return}countCfg(c.t,c.b,function(u){used=u;render()})}
+function saveSettings(){try{localStorage.setItem(KEY,JSON.stringify({n:$("n").value,tc:$("tc").value,bc:$("bc").value}))}catch(e){}}
+function saveLast(){saveSettings();if(!db)return;try{db.transaction("meta","readwrite").objectStore("meta").put(cards,"last")}catch(e){}}
+function runRandom(st,tx,t,b,n,done){
  var out=[],guard=0,lim=n*80;
- while(out.length<n&&guard<lim){guard++;
-  var a=pick(lo,hi,10),c={top:a.slice(0,5),bot:a.slice(5)},k=keyOf(c);
-  if(hist[k])continue;hist[k]=1;hcount++;out.push(c);
+ function next(){
+  if(out.length>=n||guard>=lim)return;
+  guard++;
+  var c={top:digits(t),bot:digits(b)};
+  var rq=st.add(1,keyOf(c));
+  rq.onsuccess=function(){out.push(c);if(out.length%1000===0)msg("جاري التوليد… "+out.length+" / "+n);next()};
+  rq.onerror=function(e){e.preventDefault();e.stopPropagation();next()};
  }
- cards=out;render();save();saveHist();
- if(out.length<n)msg("تم توليد "+out.length+" كرت فقط، لا توجد تركيبات جديدة كافية في هذا النطاق");
- else if(capped)msg("تم توليد "+out.length+" كرت (وصلت للحد الأقصى "+MAXH+" كرت بدون تكرار)");
- else msg("تم التوليد ✓ "+out.length+" كرت جديد غير مكرر، سيتم حفظ "+pages()+" صورة");
+ tx.oncomplete=function(){done(out)};
+ tx.onabort=function(){done(out)};
+ next();
+}
+function runEnum(st,tx,t,b,n,done){
+ var p=prefix(t,b),out=[],L=t+b,total=Math.pow(10,L);
+ var kr=st.getAllKeys(IDBKeyRange.bound(p,p+"\uffff"));
+ tx.oncomplete=function(){done(out)};
+ tx.onabort=function(){done(out)};
+ kr.onsuccess=function(){
+  var seen={};kr.result.forEach(function(k){seen[k]=1});
+  var free=[];
+  for(var i=0;i<total;i++){var s=String(i);while(s.length<L)s="0"+s;var k=p+s.slice(0,t)+"|"+s.slice(t);if(!seen[k])free.push(s)}
+  var m=Math.min(n,free.length);
+  for(var j=0;j<m;j++){var r=j+rnd(free.length-j),tmp=free[j];free[j]=free[r];free[r]=tmp}
+  for(var q=0;q<m;q++){(function(s){
+   var c={top:s.slice(0,t).split("").map(Number),bot:s.slice(t).split("").map(Number)};
+   var rq=st.add(1,keyOf(c));
+   rq.onsuccess=function(){out.push(c)};
+   rq.onerror=function(e){e.preventDefault();e.stopPropagation()};
+  })(free[q])}
+ };
+}
+function generate(){
+ if(busy||!db)return;
+ var c=cfgNow(),n=clamp($("n").value,200,MAXRUN,200);$("n").value=n;
+ var total=Math.pow(10,c.t+c.b);
+ busy=true;$("gen").disabled=true;msg("جاري التوليد…");
+ countCfg(c.t,c.b,function(u){
+  var rem=total-u;
+  if(rem<=0){busy=false;$("gen").disabled=false;used=u;cap=total;render();msg("تم استهلاك كل التركيبات الممكنة لهذا الإعداد، زد عدد الأرقام");return}
+  var nn=Math.min(n,rem),capped=nn<n;
+  var tx=db.transaction("hist","readwrite"),st=tx.objectStore("hist");
+  var fin=function(out){
+   busy=false;$("gen").disabled=false;
+   if(out.length)cards=out;
+   countCfg(c.t,c.b,function(u2){
+    used=u2;cap=total;render();saveLast();
+    if(!out.length)msg("لم يتم توليد كروت جديدة");
+    else if(out.length<n)msg("تم توليد "+out.length+" كرت فقط، وهو كل ما تبقى من تركيبات هذا الإعداد");
+    else msg("تم التوليد ✓ "+out.length+" كرت جديد غير مكرر أبداً، سيتم حفظ "+pages()+" صورة");
+   });
+  };
+  if(c.t+c.b<=6)runEnum(st,tx,c.t,c.b,nn,fin);else runRandom(st,tx,c.t,c.b,nn,fin);
+ });
 }
 function render(){
  var g=$("grid");g.textContent="";
@@ -97,14 +142,14 @@ function render(){
   f.appendChild(d);
  });
  g.appendChild(f);
- $("stats").textContent=(cards.length?"عدد الكروت: "+cards.length+" — عدد الصور: "+pages()+(cards.length>200?" (المعروض أول 200 فقط)":"")+" — ":"")+"إجمالي ما تم توليده بدون تكرار: "+hcount+" / "+MAXH;
+ $("stats").textContent=(cards.length?"عدد الكروت: "+cards.length+" — عدد الصور: "+pages()+(cards.length>200?" (المعروض أول 200 فقط)":"")+" — ":"")+"المولّد بهذا الإعداد: "+used.toLocaleString("en")+" من أصل "+fmt(cap);
  $("img").disabled=!cards.length;
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify({cards:cards,n:$("n").value,lo:$("lo").value,hi:$("hi").value}))}catch(e){}}
-function load(){try{var r=localStorage.getItem(KEY);if(!r)return;var o=JSON.parse(r);if(o&&o.cards&&o.cards.length){cards=o.cards;$("n").value=o.n||200;$("lo").value=o.lo||1;$("hi").value=o.hi||90;markCards();render();msg("تم استرجاع آخر كروت مولّدة")}}catch(e){}}
 function rr(x,X,Y,w,h,r){x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
 function pageBlob(p){
- var cols=4,rows=5,cw=220,ch=200,gap=14,pad=30,th=60;
+ var mc=Math.max(cards[0].top.length,cards[0].bot.length);
+ var cols=mc<=7?4:2,rows=PER/cols,cw=cols===4?220:420,ch=200,gap=14,pad=30,th=60;
+ var sp=Math.min(40,(cw-24)/mc),fs=Math.max(10,Math.min(32,Math.floor(sp*0.85)));
  var W=pad*2+cols*cw+(cols-1)*gap,H=pad*2+th+rows*ch+(rows-1)*gap;
  var cv=document.createElement("canvas");cv.width=W;cv.height=H;
  var x=cv.getContext("2d");
@@ -123,9 +168,10 @@ function pageBlob(p){
   x.strokeStyle="#94a3b8";x.lineWidth=2;rr(x,X,Y,cw,ch,12);x.stroke();
   x.fillStyle="#475569";x.font="bold 20px Arial,sans-serif";x.textAlign="center";
   x.fillText("#"+(p*PER+i+1),X+cw/2,Y+20);
-  x.fillStyle="#0f172a";x.font="bold 32px Arial,sans-serif";
+  x.fillStyle="#0f172a";x.font="bold "+fs+"px Arial,sans-serif";
   [c.top,c.bot].forEach(function(arr,k){
-   arr.forEach(function(v,j){x.fillText(String(v),X+cw/2+(j-2)*40,Y+80+k*80)});
+   var x0=X+cw/2-(arr.length-1)*sp/2;
+   arr.forEach(function(v,j){x.fillText(String(v),x0+j*sp,Y+80+k*80)});
   });
  });
  return new Promise(function(res){cv.toBlob(res,"image/png")});
@@ -136,34 +182,40 @@ async function saveImg(d,p,tries){
   var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="cards-"+String(p+1).padStart(2,"0")+".png";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},10000);await new Promise(function(r){setTimeout(r,800)});
   return true;
  }catch(e){
-  if(e&&e.code==="rate_limited"&&(tries||0)<6){await new Promise(function(r){setTimeout(r,2000)});return saveImg(d,p,(tries||0)+1)}
-  msg(e&&e.code==="declined"?"تم إلغاء الحفظ":"تعذر حفظ الصورة "+(p+1));
+  msg("تعذر حفظ الصورة "+(p+1));
   return false;
  }
 }
 $("img").onclick=async function(){
- var d=null;
  $("img").disabled=true;
  var n=pages();
  for(var p=0;p<n;p++){
   msg("حفظ الصورة "+(p+1)+" من "+n+"…");
-  if(!(await saveImg(d,p))){$("img").disabled=false;return}
+  if(!(await saveImg(null,p))){$("img").disabled=false;return}
  }
  msg("تم حفظ "+n+" صورة ✓");
  $("img").disabled=false;
 };
-var rt=null;
-$("rst").onclick=function(){
- var b=$("rst");
- if(!rt){b.textContent="اضغط مرة أخرى للتأكيد";rt=setTimeout(function(){rt=null;b.textContent="مسح سجل التكرار"},4000);return}
- clearTimeout(rt);rt=null;b.textContent="مسح سجل التكرار";
- hist={};hcount=0;try{localStorage.removeItem(HK)}catch(e){}
- markCards();saveHist();render();msg("تم مسح السجل، يمكنك التوليد من جديد");
-};
 $("gen").onclick=generate;
-loadHist();load();render();
-})();
+$("tc").onchange=$("bc").onchange=refreshStats;
+function init(){
+ try{var s0=JSON.parse(localStorage.getItem(KEY)||"null");if(s0){$("n").value=s0.n||200;$("tc").value=s0.tc||5;$("bc").value=s0.bc||5}}catch(e){}
+ try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
+ if(!window.indexedDB){msg("هذا المتصفح لا يدعم التخزين اللازم لمنع التكرار");$("gen").disabled=true;refreshStats();return}
+ openDB().then(function(d){
+  db=d;
+  var r=db.transaction("meta").objectStore("meta").get("last");
+  r.onsuccess=function(){
+   var l=r.result;
+   if(l&&l.length&&l.every(function(c){return c.top.concat(c.bot).every(function(v){return v>=0&&v<=9})})){cards=l;msg("تم استرجاع آخر كروت مولّدة")}
+   refreshStats();
+  };
+  r.onerror=refreshStats;
+ }).catch(function(){msg("تعذر فتح التخزين، لن يعمل منع التكرار");$("gen").disabled=true;refreshStats()});
+}
+init();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
+})();
 </script>
 </body>
 </html>

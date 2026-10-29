@@ -37,13 +37,14 @@ button:disabled{opacity:.45}
 <h1>🎴 مولّد كروت الأرقام العشوائية</h1>
 <div class="panel">
 <div class="row">
-<div><label for="n">عدد الكروت (200 كحد أدنى)</label><input id="n" type="number" inputmode="numeric" value="200" min="200"></div>
+<div><label for="n">عدد الكروت (200 كحد أدنى)</label><input id="n" type="number" inputmode="numeric" value="200" min="200" max="10000"></div>
 <div><label for="lo">من رقم</label><input id="lo" type="number" inputmode="numeric" value="1"></div>
 <div><label for="hi">إلى رقم</label><input id="hi" type="number" inputmode="numeric" value="90"></div>
 </div>
 <div class="btns">
 <button id="gen">توليد الكروت</button>
 <button class="s" id="img" disabled>حفظ كل الصور</button>
+<button class="s" id="rst">مسح سجل التكرار</button>
 </div>
 <div id="msg"></div>
 </div>
@@ -52,29 +53,39 @@ button:disabled{opacity:.45}
 </div>
 <script>
 (function(){
-var KEY="cards_v1",PER=20,cards=[];
+var KEY="cards_v1",HK="cards_hist_v1",MAXH=10000,PER=20,cards=[],hist={},hcount=0;
 var $=function(i){return document.getElementById(i)};
 function rnd(max){var a=new Uint32Array(1),lim=Math.floor(4294967296/max)*max;do{crypto.getRandomValues(a)}while(a[0]>=lim);return a[0]%max}
 function pick(lo,hi,k){var s={},r=[];while(r.length<k){var v=lo+rnd(hi-lo+1);if(!s[v]){s[v]=1;r.push(v)}}return r}
 function msg(t){$("msg").textContent=t}
 function pages(){return Math.ceil(cards.length/PER)}
+function keyOf(c){var f=function(x,y){return x-y};return c.top.slice().sort(f).join(",")+"|"+c.bot.slice().sort(f).join(",")}
+function loadHist(){try{var r=localStorage.getItem(HK);if(r){JSON.parse(r).forEach(function(k){hist[k]=1})}}catch(e){}hcount=Object.keys(hist).length}
+function saveHist(){try{localStorage.setItem(HK,JSON.stringify(Object.keys(hist)))}catch(e){msg("تعذر حفظ سجل التكرار، مساحة التخزين ممتلئة")}}
+function markCards(){cards.forEach(function(c){var k=keyOf(c);if(!hist[k]){hist[k]=1;hcount++}})}
 function generate(){
  var n=parseInt($("n").value,10),lo=parseInt($("lo").value,10),hi=parseInt($("hi").value,10);
- if(!(n>=200)){n=200;$("n").value=200}
+ if(!(n>=200))n=200;
+ if(n>MAXH)n=MAXH;
  if(isNaN(lo)||isNaN(hi)||hi-lo+1<10){msg("النطاق يجب أن يحتوي 10 أرقام مختلفة على الأقل");return}
- var seen={},out=[],guard=0;
- while(out.length<n&&guard<n*50){guard++;
-  var a=pick(lo,hi,10),top=a.slice(0,5),bot=a.slice(5);
-  var key=top.slice().sort(function(x,y){return x-y}).join(",")+"|"+bot.slice().sort(function(x,y){return x-y}).join(",");
-  if(seen[key])continue;seen[key]=1;out.push({top:top,bot:bot});
+ var left=MAXH-hcount;
+ if(left<=0){msg("وصلت إلى "+MAXH+" كرت بدون تكرار. اضغط «مسح سجل التكرار» للبدء من جديد");return}
+ var capped=n>left;if(capped)n=left;
+ $("n").value=n;
+ var out=[],guard=0,lim=n*80;
+ while(out.length<n&&guard<lim){guard++;
+  var a=pick(lo,hi,10),c={top:a.slice(0,5),bot:a.slice(5)},k=keyOf(c);
+  if(hist[k])continue;hist[k]=1;hcount++;out.push(c);
  }
- cards=out;render();save();
- msg(out.length<n?"تم توليد "+out.length+" كرت فقط (النطاق ضيق لتوليد كروت فريدة أكثر)":"تم التوليد ✓ سيتم حفظ "+pages()+" صورة");
+ cards=out;render();save();saveHist();
+ if(out.length<n)msg("تم توليد "+out.length+" كرت فقط، لا توجد تركيبات جديدة كافية في هذا النطاق");
+ else if(capped)msg("تم توليد "+out.length+" كرت (وصلت للحد الأقصى "+MAXH+" كرت بدون تكرار)");
+ else msg("تم التوليد ✓ "+out.length+" كرت جديد غير مكرر، سيتم حفظ "+pages()+" صورة");
 }
 function render(){
  var g=$("grid");g.textContent="";
  var f=document.createDocumentFragment();
- cards.forEach(function(c,i){
+ cards.slice(0,200).forEach(function(c,i){
   var d=document.createElement("div");d.className="card";
   var h=document.createElement("div");h.className="h";h.innerHTML="<span>كرت</span><span>"+(i+1)+"</span>";
   d.appendChild(h);
@@ -86,11 +97,11 @@ function render(){
   f.appendChild(d);
  });
  g.appendChild(f);
- $("stats").textContent=cards.length?"عدد الكروت: "+cards.length+" — عدد الصور: "+pages():"";
+ $("stats").textContent=(cards.length?"عدد الكروت: "+cards.length+" — عدد الصور: "+pages()+(cards.length>200?" (المعروض أول 200 فقط)":"")+" — ":"")+"إجمالي ما تم توليده بدون تكرار: "+hcount+" / "+MAXH;
  $("img").disabled=!cards.length;
 }
 function save(){try{localStorage.setItem(KEY,JSON.stringify({cards:cards,n:$("n").value,lo:$("lo").value,hi:$("hi").value}))}catch(e){}}
-function load(){try{var r=localStorage.getItem(KEY);if(!r)return;var o=JSON.parse(r);if(o&&o.cards&&o.cards.length){cards=o.cards;$("n").value=o.n||200;$("lo").value=o.lo||1;$("hi").value=o.hi||90;render();msg("تم استرجاع آخر كروت مولّدة")}}catch(e){}}
+function load(){try{var r=localStorage.getItem(KEY);if(!r)return;var o=JSON.parse(r);if(o&&o.cards&&o.cards.length){cards=o.cards;$("n").value=o.n||200;$("lo").value=o.lo||1;$("hi").value=o.hi||90;markCards();render();msg("تم استرجاع آخر كروت مولّدة")}}catch(e){}}
 function rr(x,X,Y,w,h,r){x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
 function pageBlob(p){
  var cols=4,rows=5,cw=220,ch=200,gap=14,pad=30,th=60;
@@ -141,8 +152,16 @@ $("img").onclick=async function(){
  msg("تم حفظ "+n+" صورة ✓");
  $("img").disabled=false;
 };
+var rt=null;
+$("rst").onclick=function(){
+ var b=$("rst");
+ if(!rt){b.textContent="اضغط مرة أخرى للتأكيد";rt=setTimeout(function(){rt=null;b.textContent="مسح سجل التكرار"},4000);return}
+ clearTimeout(rt);rt=null;b.textContent="مسح سجل التكرار";
+ hist={};hcount=0;try{localStorage.removeItem(HK)}catch(e){}
+ markCards();saveHist();render();msg("تم مسح السجل، يمكنك التوليد من جديد");
+};
 $("gen").onclick=generate;
-load();
+loadHist();load();render();
 })();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(function(){});
 </script>

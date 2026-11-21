@@ -17,7 +17,7 @@ h1{font-size:1.35rem;margin:6px 0 14px}
 .panel{background:var(--sf);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
 .row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 label{display:block;font-size:.8rem;color:var(--mu);margin-bottom:4px}
-input{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font-size:1rem}
+input,select{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx);font-size:1rem}
 .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 button{border:0;border-radius:10px;padding:12px 16px;font-size:1rem;font-weight:600;cursor:pointer;background:var(--ac);color:#fff;font-family:inherit}
 button.s{background:var(--bg);color:var(--tx);border:1px solid var(--bd)}
@@ -44,7 +44,8 @@ button:disabled{opacity:.45}
 <div class="row" style="grid-template-columns:repeat(2,1fr);margin-top:10px">
 <div><label for="pp">عدد الكروت في الصورة (1 إلى 100)</label><input id="pp" type="number" inputmode="numeric" value="20" min="1" max="100"></div>
 <div><label for="val">قيمة الكارت بالجنيه (اختياري)</label><input id="val" type="number" inputmode="decimal" placeholder="مثال: 10" min="0" step="any"></div>
-<div style="grid-column:1/-1"><label for="spd">سرعة الإنترنت (اختياري)</label><input id="spd" type="text" maxlength="20" placeholder="مثال: 10 ميجا"></div>
+<div><label for="spd">سرعة الإنترنت (اختياري)</label><input id="spd" type="number" inputmode="decimal" min="0" step="any" placeholder="مثال: 10"></div>
+<div><label for="spu">الوحدة</label><select id="spu"><option value="ميجا">ميجا</option><option value="جيجا">جيجا</option></select></div>
 </div>
 <div class="btns">
 <button id="gen">توليد الكروت</button>
@@ -62,7 +63,7 @@ var $=function(i){return document.getElementById(i)};
 function rnd(max){var a=new Uint32Array(1),lim=Math.floor(4294967296/max)*max;do{crypto.getRandomValues(a)}while(a[0]>=lim);return a[0]%max}
 function digits(k){var r=[];for(var i=0;i<k;i++)r.push(rnd(10));return r}
 function msg(t){$("msg").textContent=t}
-function spdTxt(){return String($("spd").value||"").trim().slice(0,20)}
+function spdTxt(){var v=parseFloat(String($("spd").value).replace(",","."));if(isNaN(v)||v<=0)return"";return String(Math.round(v*100)/100)+" "+$("spu").value}
 function getPer(){PER=clamp($("pp").value,1,100,20);$("pp").value=PER;return PER}
 function valTxt(){var v=parseFloat(String($("val").value).replace(",","."));if(isNaN(v)||v<0)return"";return String(Math.round(v*100)/100)}
 function pages(){return Math.ceil(cards.length/PER)}
@@ -77,7 +78,7 @@ function countCfg(t,b,cb){
   r.onsuccess=function(){cb(r.result)};r.onerror=function(){cb(0)}}catch(e){cb(0)}
 }
 function refreshStats(){var c=cfgNow();cap=Math.pow(10,c.t+c.b);if(!db){render();return}countCfg(c.t,c.b,function(u){used=u;render()})}
-function saveSettings(){try{localStorage.setItem(KEY,JSON.stringify({n:$("n").value,tc:$("tc").value,bc:$("bc").value,pp:$("pp").value,val:$("val").value,spd:$("spd").value}))}catch(e){}}
+function saveSettings(){try{localStorage.setItem(KEY,JSON.stringify({n:$("n").value,tc:$("tc").value,bc:$("bc").value,pp:$("pp").value,val:$("val").value,spd:$("spd").value,spu:$("spu").value}))}catch(e){}}
 function saveLast(){saveSettings();if(!db)return;try{db.transaction("meta","readwrite").objectStore("meta").put(cards,"last")}catch(e){}}
 function runRandom(st,tx,t,b,n,done){
  var out=[],guard=0,lim=n*80;
@@ -182,7 +183,7 @@ function pageBlob(p){
    var sw=x.measureText(sn).width,spw=0;
    x.textAlign="left";x.fillText(sn,X+10,Y+20);
    if(sd){
-    var ss=14,maxw=vt?cw*0.3:cw-2*(sw+18);
+    var ss=16,maxw=vt?cw*0.3:cw-2*(sw+18);
     x.font="bold "+ss+"px Arial,sans-serif";
     while(ss>9&&x.measureText(sd).width>maxw){ss--;x.font="bold "+ss+"px Arial,sans-serif"}
     spw=x.measureText(sd).width;
@@ -228,10 +229,10 @@ $("img").onclick=async function(){
 };
 $("gen").onclick=generate;
 $("tc").onchange=$("bc").onchange=refreshStats;
-$("pp").onchange=$("val").onchange=$("spd").onchange=function(){render();saveSettings()};
+$("pp").onchange=$("val").onchange=$("spd").onchange=$("spu").onchange=function(){render();saveSettings()};
 $("val").oninput=$("spd").oninput=function(){render()};
 function init(){
- try{var s0=JSON.parse(localStorage.getItem(KEY)||"null");if(s0){$("n").value=s0.n||200;$("tc").value=s0.tc||5;$("bc").value=s0.bc||5;$("pp").value=s0.pp||20;$("val").value=s0.val||"";$("spd").value=s0.spd||""}}catch(e){}
+ try{var s0=JSON.parse(localStorage.getItem(KEY)||"null");if(s0){$("n").value=s0.n||200;$("tc").value=s0.tc||5;$("bc").value=s0.bc||5;$("pp").value=s0.pp||20;$("val").value=s0.val||"";$("spd").value=s0.spd||"";if(s0.spu)$("spu").value=s0.spu}}catch(e){}
  try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch(e){}
  if(!window.indexedDB){msg("هذا المتصفح لا يدعم التخزين اللازم لمنع التكرار");$("gen").disabled=true;refreshStats();return}
  openDB().then(function(d){
